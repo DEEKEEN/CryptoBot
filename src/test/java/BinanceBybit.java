@@ -31,7 +31,8 @@ public class BinanceBybit {
     }
 
     private static final Logger LOGGER = Logger.getLogger(BinanceBybit.class.getName());
-    private static final BigDecimal MIN_SPREAD_PERCENT = new BigDecimal("1.0");
+    private static final BigDecimal MIN_SPREAD_PERCENT = new BigDecimal("0.9");
+    private static final BigDecimal THRESHOLD = new BigDecimal("0.4");
     // Константи фі (тейкер), у частках від 1
     private static final BigDecimal BINANCE_TAKER_FEE = new BigDecimal("0.001");  // 0.1%
     private static final BigDecimal BYBIT_TAKER_FEE   = new BigDecimal("0.0022");  // 0.22%
@@ -429,15 +430,12 @@ public class BinanceBybit {
             BigDecimal grossNow = grossSpreadPct(shortPx, longPx);
             BigDecimal netNow   = netSpreadPct(grossNow, shortFee, longFee);
 
-            BigDecimal basis = spread.spread;
-            BigDecimal threshold = basis.divide(new BigDecimal("3"), SCALE, RoundingMode.HALF_UP);
-
             LOGGER.info(String.format(
                     LocalDateTime.now() + " Symbol: %s | %s Short %s / %s Long %s | Gross: %.4f%% | Net: %.4f%% | Threshold: %.4f%%",
                     spread.symbol, shortEx, shortPx.toPlainString(), longEx, longPx.toPlainString(),
-                    grossNow, netNow, threshold));
+                    grossNow, netNow, THRESHOLD));
 
-            if (grossNow.compareTo(threshold) > 0) {
+            if (grossNow.compareTo(THRESHOLD) > 0) {
                 needToClose = false;
             }
 
