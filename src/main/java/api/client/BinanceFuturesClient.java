@@ -28,6 +28,7 @@ public class BinanceFuturesClient {
     private static final String API_KEY = "wC5b34fDjPpUHDPWkNykHW1Sh582oYEAZovHH3SduUw2KFWc7ao6pLItZ4uia8Ti";
     private static final String SECRET_KEY = "9mPO1jUgqxECEkEmkneBqSmj34uziJAZZEgaeElPzab25Xe8eeJHnVW3Y99JsPUy";
     private static final UMFuturesClientImpl client = new UMFuturesClientImpl(API_KEY, SECRET_KEY);
+    private static final ExecutorService EXEC = Executors.newFixedThreadPool(4);
     private static final int SCALE = 10;
 
     public static void main(String[] args) throws InterruptedException {
@@ -35,7 +36,7 @@ public class BinanceFuturesClient {
                 .shortPrice(BigDecimal.valueOf(0.511800)).longPrice(BigDecimal.valueOf(0.505500)).symbol("XPLUSDT").build();
         //makeOrder(spread);
         Thread.sleep(333);
-        closeOrder2(spread);
+        closeOrder3(spread);
     }
 
 
@@ -52,21 +53,7 @@ public class BinanceFuturesClient {
         try {
             String symbol = spread.getSymbol();
 
-            // 1. Get bid/ask price from ticker
-//            LinkedHashMap<String, Object> priceParams = new LinkedHashMap<>();
-//            priceParams.put("symbol", symbol);
-//            CoinsResponse binanceCoins = Utils.convertJsonStringToModel(
-//                    BinanceFuturesClient.getCoin(priceParams),
-//                    new TypeReference<CoinsResponse>() {}
-//            );
-//            System.out.println("Binance coin price " + binanceCoins);
             BigDecimal markPrice;
-//            if(spread.shortExchange.equals("Binance")){
-//                markPrice = new BigDecimal(String.valueOf(binanceCoins.getBidPrice()));
-//            }else {
-//                markPrice = new BigDecimal(String.valueOf(binanceCoins.getAskPrice()));
-//            }
-
             if(spread.shortExchange.equals("Binance")){
                 markPrice = spread.shortPrice;
             }else {
@@ -76,7 +63,6 @@ public class BinanceFuturesClient {
             // 4. Determine maker limit price
             boolean isSell = "Binance".equals(spread.getShortExchange());
 
-            // 5. Build limit order with GTX (PostOnly)
             LinkedHashMap<String, Object> orderParams = new LinkedHashMap<>();
             orderParams.put("symbol", symbol);
             orderParams.put("type", "LIMIT");
@@ -85,90 +71,22 @@ public class BinanceFuturesClient {
             orderParams.put("quantity", spread.getQuantity());
             orderParams.put("timeInForce", "GTC"); //
             orderParams.put("marginType", "ISOLATED");
+            //orderParams.put("recvWindow", 5000);                 // захист від лагів
             System.out.println("Binance order model " + LocalDateTime.now() + "  " + orderParams);
 
-            // 6. Send order
-            String result = client.account().newOrder(orderParams);
-            System.out.println(LocalDateTime.now() + " Binance Позиція відкрита:");
-            System.out.println(result);
+            // 2) відправляємо асинхронно, не блокуємось
+            CompletableFuture
+                    .supplyAsync(() -> client.account().newOrder(orderParams), EXEC)
+                    .thenAccept(res -> LOGGER.info(LocalDateTime.now() + " Binance Позиція відкрита: " + res))
+                    .exceptionally(ex -> { LOGGER.severe("Order failed: " + ex); return null; });
+
+//            // 6. Send order
+//            String result = client.account().newOrder(orderParams);
+//            System.out.println(LocalDateTime.now() + " Binance Позиція відкрита:");
+//            System.out.println(result);
 
         } catch (Exception e) {
             System.err.println("❌ Помилка при створенні ордера: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
-
-    public static void closeOrder2(Spread spread) {
-        try {
-            String symbol = spread.getSymbol();
-
-            // 1. Отримати поточну позицію
-            LinkedHashMap<String, Object> positionParams = new LinkedHashMap<>();
-            positionParams.put("symbol", spread.getSymbol());
-            String positionData = client.account().positionInformation(positionParams);
-
-            JSONArray positions = new JSONArray(positionData);
-            JSONObject position = positions.getJSONObject(0);
-            double positionAmt = Math.abs(position.getDouble("positionAmt")); // абсолютне значення позиції
-
-            // 2. Get ticker price
-            LinkedHashMap<String, Object> priceParams = new LinkedHashMap<>();
-            priceParams.put("symbol", symbol);
-            String tickerStr = client.market().bookTicker(priceParams);
-            JSONObject ticker = new JSONObject(tickerStr);
-            BigDecimal bidPrice = new BigDecimal(ticker.getString("bidPrice"));
-            BigDecimal askPrice = new BigDecimal(ticker.getString("askPrice"));
-            System.out.println("Binance price" + tickerStr);
-
-            // 3. Get tickSize and price precision from exchangeInfo
-            String exchangeInfo = client.market().exchangeInfo();
-            JSONObject json = new JSONObject(exchangeInfo);
-            JSONArray symbols = json.getJSONArray("symbols");
-            BigDecimal tickSize = null;
-            int pricePrecision = 5;
-
-            for (int i = 0; i < symbols.length(); i++) {
-                JSONObject sym = symbols.getJSONObject(i);
-                if (symbol.equals(sym.getString("symbol"))) {
-                    JSONArray filters = sym.getJSONArray("filters");
-                    for (int j = 0; j < filters.length(); j++) {
-                        JSONObject filter = filters.getJSONObject(j);
-                        if ("PRICE_FILTER".equals(filter.getString("filterType"))) {
-                            tickSize = new BigDecimal(filter.getString("tickSize"));
-                            pricePrecision = tickSize.stripTrailingZeros().scale();
-                            break;
-                        }
-                    }
-                    break;
-                }
-            }
-
-            // 4. Determine PostOnly price
-            boolean isClosingShort = "Binance".equals(spread.getShortExchange());
-            BigDecimal limitPrice = isClosingShort
-                    ? askPrice.add(tickSize.multiply(BigDecimal.valueOf(0)))  // Sell was opened → Buy to close short
-                    : bidPrice.subtract(tickSize.multiply(BigDecimal.valueOf(0))); // Buy was opened → Sell to close long
-            limitPrice = limitPrice.setScale(pricePrecision, RoundingMode.DOWN);
-
-            // 5. Build Maker-style PostOnly LIMIT close order
-            LinkedHashMap<String, Object> closeParams = new LinkedHashMap<>();
-            closeParams.put("symbol", symbol);
-            closeParams.put("type", "LIMIT");
-            closeParams.put("price", limitPrice.toPlainString());
-            closeParams.put("quantity", spread.getQuantity());
-            closeParams.put("reduceOnly", "true");
-            closeParams.put("marginType", "ISOLATED");
-            closeParams.put("timeInForce", "GTC"); // ✅ PostOnly
-
-            closeParams.put("side", isClosingShort ? "BUY" : "SELL"); // opposite of open position
-
-            System.out.println(closeParams);
-            String response = client.account().newOrder(closeParams);
-            System.out.println(LocalDateTime.now() + " ✅ Maker close order sent to Binance:");
-            System.out.println(response);
-
-        } catch (Exception e) {
-            System.err.println("❌ Error closing Binance position as Maker: " + e.getMessage());
             e.printStackTrace();
         }
     }

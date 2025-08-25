@@ -449,22 +449,12 @@ public class BinanceBybit {
                     .spread(grossNow)
                     .netSpread(netNow)
                     .build();
-            updatedSpread.setQuantity(getQuantity(updatedSpread));
+            updatedSpread.setQuantity(getQuantity2(updatedSpread));
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Error checking spread for " + spread.symbol, e);
         }
 
         return new SpreadCheckResult(updatedSpread, needToClose);
-    }
-
-    public static String getQuantity(Spread spread) {
-        BigDecimal quantity;
-        int precision = 0;
-            // Use BigDecimal for division
-            quantity = BigDecimal.valueOf(SCALE).divide(spread.getShortPrice(), SCALE, RoundingMode.DOWN);
-            precision = BybitTradingBot.getPrecisionForSymbol(spread.getSymbol());
-        // Set scale and return as string
-        return quantity.setScale(precision, RoundingMode.DOWN).toPlainString();
     }
 
     public static String getQuantity2(Spread spread) {

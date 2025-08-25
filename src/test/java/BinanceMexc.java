@@ -70,7 +70,7 @@ public class BinanceMexc {
         //Close deal
         if(!spreadList.isEmpty()) {
             MexcFuturesClient.closeOrder(spread);
-            BinanceFuturesClient.closeOrder2(spread);
+            BinanceFuturesClient.closeOrder3(spread);
             int a =0;
         }
         //LOGGER.info("Deal closed at: " + LocalDateTime.now());
