@@ -126,62 +126,6 @@ public class BinanceFuturesClient {
         }
     }
 
-    public static int getPrecisionForSymbol(String symbol) {
-        String response = client.market().exchangeInfo(); // ⬅ без параметрів
-
-        JSONObject json = new JSONObject(response);
-        JSONArray symbols = json.getJSONArray("symbols");
-
-        for (int i = 0; i < symbols.length(); i++) {
-            JSONObject sym = symbols.getJSONObject(i);
-            if (symbol.equals(sym.getString("symbol"))) {
-                JSONArray filters = sym.getJSONArray("filters");
-                for (int j = 0; j < filters.length(); j++) {
-                    JSONObject filter = filters.getJSONObject(j);
-                    if ("LOT_SIZE".equals(filter.getString("filterType"))) {
-                        String stepSize = filter.getString("stepSize");
-                        return getDecimalPlaces(stepSize);
-                    }
-                }
-            }
-        }
-
-        throw new RuntimeException("StepSize не знайдено для символу " + symbol);
-    }
-
-    private static int getDecimalPlaces(String stepSize) {
-        BigDecimal bd = new BigDecimal(stepSize);
-        return Math.max(0, bd.stripTrailingZeros().scale());
-    }
-
-    public static BigDecimal getTickSize(String symbol) {
-        try {
-            String exchangeInfoStr = client.market().exchangeInfo();
-            JSONObject json = new JSONObject(exchangeInfoStr);
-            JSONArray symbols = json.getJSONArray("symbols");
-
-            for (int i = 0; i < symbols.length(); i++) {
-                JSONObject s = symbols.getJSONObject(i);
-                if (s.getString("symbol").equals(symbol)) {
-                    JSONArray filters = s.getJSONArray("filters");
-                    for (int j = 0; j < filters.length(); j++) {
-                        JSONObject filter = filters.getJSONObject(j);
-                        if ("PRICE_FILTER".equals(filter.getString("filterType"))) {
-                            return new BigDecimal(filter.getString("tickSize"));
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("❌ Error fetching tickSize: " + e.getMessage());
-            e.printStackTrace();
-        }
-
-        return BigDecimal.valueOf(0.00001); // fallback default (not recommended long term)
-    }
-
-
-
     public static void setLeverageForAllCoins() {
         List<CoinsResponse> response = Utils.convertJsonStringToModel(
                                 BinanceFuturesClient.getAllCoins(),
